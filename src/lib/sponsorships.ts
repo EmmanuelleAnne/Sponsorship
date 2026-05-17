@@ -1,4 +1,4 @@
-import { createClient } from "@libsql/client";
+import { createClient, type Client } from "@libsql/client";
 import path from "path";
 
 export interface SponsorshipItem {
@@ -9,12 +9,20 @@ export interface SponsorshipItem {
   amount: number;
   claimedBy: string | null;
   claimedAt: string | null;
+  paid: boolean;
 }
 
-const db = createClient({
-  url: process.env.TURSO_DATABASE_URL || `file:${path.join(process.cwd(), "data", "sponsorships.db")}`,
-  authToken: process.env.TURSO_AUTH_TOKEN,
-});
+let _db: Client | null = null;
+
+function getDb(): Client {
+  if (!_db) {
+    _db = createClient({
+      url: process.env.TURSO_DATABASE_URL || `file:${path.join(process.cwd(), "data", "sponsorships.db")}`,
+      authToken: process.env.TURSO_AUTH_TOKEN,
+    });
+  }
+  return _db;
+}
 
 const SEED_ITEMS: { name: string; price: number }[] = [
   { name: "Welcome Kit", price: 500 },
@@ -33,7 +41,7 @@ let initialized = false;
 async function init() {
   if (initialized) return;
 
-  await db.execute(`
+  await getDb().execute(`
     CREATE TABLE IF NOT EXISTS sponsorships (
       id TEXT PRIMARY KEY,
       category TEXT NOT NULL,
@@ -41,11 +49,19 @@ async function init() {
       total_portions INTEGER,
       amount INTEGER NOT NULL,
       claimed_by TEXT,
-      claimed_at TEXT
+      claimed_at TEXT,
+      paid INTEGER NOT NULL DEFAULT 0
     )
   `);
 
-  const { rows } = await db.execute("SELECT COUNT(*) as count FROM sponsorships");
+  // Add paid column if it doesn't exist (migration for existing databases)
+  try {
+    await getDb().execute("ALTER TABLE sponsorships ADD COLUMN paid INTEGER NOT NULL DEFAULT 0");
+  } catch {
+    // Column already exists
+  }
+
+  const { rows } = await getDb().execute("SELECT COUNT(*) as count FROM sponsorships");
   if (Number(rows[0].count) === 0) {
     const stmts: { sql: string; args: (string | number | null)[] }[] = [];
 
@@ -66,7 +82,7 @@ async function init() {
       }
     }
 
-    await db.batch(stmts);
+    await getDb().batch(stmts);
   }
 
   initialized = true;
@@ -81,12 +97,13 @@ function rowToItem(row: Record<string, unknown>): SponsorshipItem {
     amount: row.amount as number,
     claimedBy: row.claimed_by as string | null,
     claimedAt: row.claimed_at as string | null,
+    paid: Boolean(row.paid),
   };
 }
 
 export async function getItems(): Promise<SponsorshipItem[]> {
   await init();
-  const { rows } = await db.execute("SELECT * FROM sponsorships ORDER BY rowid");
+  const { rows } = await getDb().execute("SELECT * FROM sponsorships ORDER BY rowid");
   return rows.map(rowToItem);
 }
 
@@ -96,13 +113,13 @@ export async function claimItem(
 ): Promise<{ success: boolean; error?: string }> {
   await init();
 
-  const { rows } = await db.execute({ sql: "SELECT * FROM sponsorships WHERE id = ?", args: [id] });
+  const { rows } = await getDb().execute({ sql: "SELECT * FROM sponsorships WHERE id = ?", args: [id] });
   if (rows.length === 0) return { success: false, error: "Item not found" };
 
   const item = rowToItem(rows[0]);
   if (item.claimedBy) return { success: false, error: `Already claimed by ${item.claimedBy}` };
 
-  await db.execute({
+  await getDb().execute({
     sql: "UPDATE sponsorships SET claimed_by = ?, claimed_at = ? WHERE id = ? AND claimed_by IS NULL",
     args: [name, new Date().toISOString(), id],
   });
@@ -115,10 +132,23 @@ export async function unclaimItem(
 ): Promise<{ success: boolean; error?: string }> {
   await init();
 
-  const { rows } = await db.execute({ sql: "SELECT * FROM sponsorships WHERE id = ?", args: [id] });
+  const { rows } = await getDb().execute({ sql: "SELECT * FROM sponsorships WHERE id = ?", args: [id] });
   if (rows.length === 0) return { success: false, error: "Item not found" };
   if (!rows[0].claimed_by) return { success: false, error: "Item is not claimed" };
 
-  await db.execute({ sql: "UPDATE sponsorships SET claimed_by = NULL, claimed_at = NULL WHERE id = ?", args: [id] });
+  await getDb().execute({ sql: "UPDATE sponsorships SET claimed_by = NULL, claimed_at = NULL WHERE id = ?", args: [id] });
+  return { success: true };
+}
+
+export async function markPaid(
+  id: string,
+  paid: boolean
+): Promise<{ success: boolean; error?: string }> {
+  await init();
+
+  const { rows } = await getDb().execute({ sql: "SELECT * FROM sponsorships WHERE id = ?", args: [id] });
+  if (rows.length === 0) return { success: false, error: "Item not found" };
+
+  await getDb().execute({ sql: "UPDATE sponsorships SET paid = ? WHERE id = ?", args: [paid ? 1 : 0, id] });
   return { success: true };
 }

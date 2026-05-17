@@ -10,11 +10,13 @@ interface SponsorshipItem {
   amount: number;
   claimedBy: string | null;
   claimedAt: string | null;
+  paid: boolean;
 }
 
 export default function AdminPage() {
   const [items, setItems] = useState<SponsorshipItem[]>([]);
   const [removing, setRemoving] = useState<string | null>(null);
+  const [toggling, setToggling] = useState<string | null>(null);
 
   const fetchItems = useCallback(async () => {
     const res = await fetch("/api/sponsorships");
@@ -38,17 +40,29 @@ export default function AdminPage() {
     setRemoving(null);
   };
 
+  const handleTogglePaid = async (id: string, currentlyPaid: boolean) => {
+    setToggling(id);
+    await fetch("/api/sponsorships", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, action: "markPaid", paid: !currentlyPaid }),
+    });
+    await fetchItems();
+    setToggling(null);
+  };
+
   const claimed = items.filter((i) => i.claimedBy);
   const unclaimed = items.filter((i) => !i.claimedBy);
   const totalRaised = claimed.reduce((sum, i) => sum + i.amount, 0);
+  const totalPaid = claimed.filter((i) => i.paid).reduce((sum, i) => sum + i.amount, 0);
   const totalGoal = items.reduce((sum, i) => sum + i.amount, 0);
 
-  const sponsorTotals = new Map<string, number>();
+  const sponsorTotals = new Map<string, { pledged: number; paid: number }>();
   for (const item of claimed) {
-    sponsorTotals.set(
-      item.claimedBy!,
-      (sponsorTotals.get(item.claimedBy!) || 0) + item.amount
-    );
+    const current = sponsorTotals.get(item.claimedBy!) || { pledged: 0, paid: 0 };
+    current.pledged += item.amount;
+    if (item.paid) current.paid += item.amount;
+    sponsorTotals.set(item.claimedBy!, current);
   }
 
   return (
@@ -73,15 +87,21 @@ export default function AdminPage() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-5 gap-4 mb-8">
         <div className="bg-white rounded-xl shadow p-4 text-center">
           <p className="text-2xl font-bold text-green-700">
-            ${totalRaised.toLocaleString()}
+            ${totalPaid.toLocaleString()}
           </p>
-          <p className="text-xs text-stone-500 mt-1">Total Raised</p>
+          <p className="text-xs text-stone-500 mt-1">Paid</p>
         </div>
         <div className="bg-white rounded-xl shadow p-4 text-center">
-          <p className="text-2xl font-bold text-yellow-700">
+          <p className="text-2xl font-bold text-yellow-600">
+            ${totalRaised.toLocaleString()}
+          </p>
+          <p className="text-xs text-stone-500 mt-1">Pledged</p>
+        </div>
+        <div className="bg-white rounded-xl shadow p-4 text-center">
+          <p className="text-2xl font-bold text-stone-500">
             ${(totalGoal - totalRaised).toLocaleString()}
           </p>
           <p className="text-xs text-stone-500 mt-1">Remaining</p>
@@ -106,16 +126,23 @@ export default function AdminPage() {
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
             {Array.from(sponsorTotals.entries())
-              .sort((a, b) => b[1] - a[1])
-              .map(([name, total]) => (
+              .sort((a, b) => b[1].pledged - a[1].pledged)
+              .map(([name, totals]) => (
                 <div
                   key={name}
                   className="flex justify-between items-center bg-green-50 rounded-lg px-4 py-2"
                 >
                   <span className="font-medium text-stone-800">{name}</span>
-                  <span className="text-green-700 font-semibold">
-                    ${total.toLocaleString()}
-                  </span>
+                  <div className="text-right">
+                    <span className="text-green-700 font-semibold">
+                      ${totals.pledged.toLocaleString()}
+                    </span>
+                    {totals.paid > 0 && (
+                      <p className="text-xs text-green-600">
+                        ${totals.paid.toLocaleString()} paid
+                      </p>
+                    )}
+                  </div>
                 </div>
               ))}
           </div>
@@ -140,12 +167,18 @@ export default function AdminPage() {
                   <th className="pb-2 pr-4">Amount</th>
                   <th className="pb-2 pr-4">Sponsor</th>
                   <th className="pb-2 pr-4">Date</th>
+                  <th className="pb-2 pr-4 text-center">Paid</th>
                   <th className="pb-2"></th>
                 </tr>
               </thead>
               <tbody>
                 {claimed.map((item) => (
-                  <tr key={item.id} className="border-b border-stone-100">
+                  <tr
+                    key={item.id}
+                    className={`border-b border-stone-100 ${
+                      item.paid ? "bg-green-50" : ""
+                    }`}
+                  >
                     <td className="py-2.5 pr-4 text-stone-800">
                       {item.category}
                       {item.portion
@@ -162,6 +195,19 @@ export default function AdminPage() {
                       {item.claimedAt
                         ? new Date(item.claimedAt).toLocaleDateString()
                         : ""}
+                    </td>
+                    <td className="py-2.5 pr-4 text-center">
+                      <button
+                        onClick={() => handleTogglePaid(item.id, item.paid)}
+                        disabled={toggling === item.id}
+                        className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors disabled:opacity-50 ${
+                          item.paid
+                            ? "bg-green-200 text-green-800 hover:bg-green-300"
+                            : "bg-stone-200 text-stone-600 hover:bg-stone-300"
+                        }`}
+                      >
+                        {item.paid ? "Paid" : "Unpaid"}
+                      </button>
                     </td>
                     <td className="py-2.5">
                       <button
