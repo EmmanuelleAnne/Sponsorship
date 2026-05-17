@@ -1,4 +1,5 @@
 import { createClient, type Client } from "@libsql/client";
+import fs from "fs";
 import path from "path";
 
 export interface SponsorshipItem {
@@ -16,10 +17,16 @@ let _db: Client | null = null;
 
 function getDb(): Client {
   if (!_db) {
-    _db = createClient({
-      url: process.env.TURSO_DATABASE_URL || `file:${path.join(process.cwd(), "data", "sponsorships.db")}`,
-      authToken: process.env.TURSO_AUTH_TOKEN,
-    });
+    if (process.env.TURSO_DATABASE_URL) {
+      _db = createClient({
+        url: process.env.TURSO_DATABASE_URL,
+        authToken: process.env.TURSO_AUTH_TOKEN,
+      });
+    } else {
+      const dataDir = path.join(process.cwd(), "data");
+      if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+      _db = createClient({ url: `file:${path.join(dataDir, "sponsorships.db")}` });
+    }
   }
   return _db;
 }

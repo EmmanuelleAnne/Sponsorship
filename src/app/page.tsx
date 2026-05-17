@@ -164,39 +164,63 @@ export default function Home() {
         </p>
       </div>
 
-      {/* Sticky Your Sponsorships Bar */}
+      {/* Sticky Sponsorship Bar — bottom on mobile, top on desktop */}
       {(() => {
         const myItems = items.filter((i) => i.claimedBy === savedName);
         if (myItems.length === 0) return null;
         const myTotal = myItems.reduce((sum, i) => sum + i.amount, 0);
         return (
-          <div className="sticky top-0 z-50 -mx-4 px-4 pt-2 pb-2">
-            <div className="bg-green-50 border border-green-200 rounded-xl p-4 shadow-lg">
-              <div className="flex items-center justify-between gap-4 flex-wrap">
-                <div className="flex-1 min-w-0">
-                  <p className="font-bold text-green-800 text-sm">
-                    Your Sponsorships ({myItems.length} item{myItems.length !== 1 ? "s" : ""})
-                  </p>
-                  <p className="text-xs text-green-700 truncate">
-                    {myItems.map((i) => i.category).filter((v, idx, a) => a.indexOf(v) === idx).join(", ")}
-                  </p>
+          <>
+            {/* Mobile: fixed bottom bar */}
+            <div className="fixed bottom-0 left-0 right-0 z-50 sm:hidden">
+              <div className="bg-green-50 border-t border-green-200 px-4 py-3 shadow-[0_-4px_12px_rgba(0,0,0,0.1)]">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-bold text-green-800 text-sm">
+                      {myItems.length} item{myItems.length !== 1 ? "s" : ""} &middot; ${myTotal.toLocaleString()}
+                    </p>
+                  </div>
+                  <a
+                    href="https://pay.collctiv.com/2026-banana-reunion-fund-38504"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="shrink-0 px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-xl transition-colors text-sm"
+                  >
+                    Make Payment &rarr;
+                  </a>
                 </div>
-                <div className="text-right shrink-0">
-                  <p className="text-lg font-bold text-green-800">
-                    ${myTotal.toLocaleString()}
-                  </p>
-                </div>
-                <a
-                  href="https://pay.collctiv.com/2026-banana-reunion-fund-38504"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="shrink-0 px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-xl transition-colors text-sm"
-                >
-                  Make Payment &rarr;
-                </a>
               </div>
             </div>
-          </div>
+
+            {/* Desktop: sticky top bar */}
+            <div className="sticky top-0 z-50 -mx-4 px-4 pt-2 pb-2 hidden sm:block">
+              <div className="bg-green-50 border border-green-200 rounded-xl p-4 shadow-lg">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold text-green-800 text-sm">
+                      Your Sponsorships ({myItems.length} item{myItems.length !== 1 ? "s" : ""})
+                    </p>
+                    <p className="text-xs text-green-700 truncate">
+                      {myItems.map((i) => i.category).filter((v, idx, a) => a.indexOf(v) === idx).join(", ")}
+                    </p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-lg font-bold text-green-800">
+                      ${myTotal.toLocaleString()}
+                    </p>
+                  </div>
+                  <a
+                    href="https://pay.collctiv.com/2026-banana-reunion-fund-38504"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="shrink-0 px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-xl transition-colors text-sm"
+                  >
+                    Make Payment &rarr;
+                  </a>
+                </div>
+              </div>
+            </div>
+          </>
         );
       })()}
 
@@ -387,6 +411,11 @@ export default function Home() {
           </div>
         )}
       </div>
+
+      {/* Bottom padding so content isn't hidden behind mobile sticky bar */}
+      {items.filter((i) => i.claimedBy === savedName).length > 0 && (
+        <div className="h-20 sm:hidden" />
+      )}
     </main>
   );
 }
