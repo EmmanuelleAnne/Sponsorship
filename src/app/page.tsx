@@ -156,6 +156,64 @@ export default function Home() {
         </div>
       </div>
 
+      {/* Info Note */}
+      <div className="bg-yellow-100 border border-yellow-300 rounded-xl p-4 mb-6 text-center">
+        <p className="text-yellow-800 text-sm font-medium">
+          Feel free to sponsor as many items as you&apos;d like! Every
+          contribution helps make our reunion amazing.
+        </p>
+      </div>
+
+      {/* Your Sponsorships Panel */}
+      {items.filter((i) => i.claimedBy === savedName).length > 0 && (
+        <div className="bg-green-50 border border-green-200 rounded-xl p-5 mb-8">
+          <h2 className="font-bold text-green-800 mb-3">
+            Your Sponsorships
+          </h2>
+          <div className="space-y-1.5 mb-4">
+            {items
+              .filter((i) => i.claimedBy === savedName)
+              .map((item) => (
+                <div
+                  key={item.id}
+                  className="flex justify-between items-center text-sm"
+                >
+                  <span className="text-green-800">
+                    {item.category}
+                    {item.portion
+                      ? ` (portion ${item.portion}/${item.totalPortions})`
+                      : ""}
+                  </span>
+                  <span className="font-semibold text-green-700">
+                    ${item.amount}
+                  </span>
+                </div>
+              ))}
+          </div>
+          <div className="flex justify-between items-center border-t border-green-200 pt-3 mb-4">
+            <span className="font-bold text-green-900">Your Total</span>
+            <span className="text-xl font-bold text-green-800">
+              $
+              {items
+                .filter((i) => i.claimedBy === savedName)
+                .reduce((sum, i) => sum + i.amount, 0)
+                .toLocaleString()}
+            </span>
+          </div>
+          <a
+            href="https://pay.collctiv.com/2026-banana-reunion-fund-38504"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block w-full text-center px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-xl transition-colors text-lg"
+          >
+            Make Payment &rarr;
+          </a>
+          <p className="text-xs text-green-600 text-center mt-2">
+            You&apos;ll be taken to our secure Collctiv payment page
+          </p>
+        </div>
+      )}
+
       {/* Progress Bar */}
       <div className="bg-white rounded-xl shadow p-4 mb-8">
         <div className="flex justify-between text-sm font-medium text-yellow-800 mb-2">
