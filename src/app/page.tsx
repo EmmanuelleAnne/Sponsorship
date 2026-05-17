@@ -164,55 +164,41 @@ export default function Home() {
         </p>
       </div>
 
-      {/* Your Sponsorships Panel */}
-      {items.filter((i) => i.claimedBy === savedName).length > 0 && (
-        <div className="bg-green-50 border border-green-200 rounded-xl p-5 mb-8">
-          <h2 className="font-bold text-green-800 mb-3">
-            Your Sponsorships
-          </h2>
-          <div className="space-y-1.5 mb-4">
-            {items
-              .filter((i) => i.claimedBy === savedName)
-              .map((item) => (
-                <div
-                  key={item.id}
-                  className="flex justify-between items-center text-sm"
-                >
-                  <span className="text-green-800">
-                    {item.category}
-                    {item.portion
-                      ? ` (portion ${item.portion}/${item.totalPortions})`
-                      : ""}
-                  </span>
-                  <span className="font-semibold text-green-700">
-                    ${item.amount}
-                  </span>
+      {/* Sticky Your Sponsorships Bar */}
+      {(() => {
+        const myItems = items.filter((i) => i.claimedBy === savedName);
+        if (myItems.length === 0) return null;
+        const myTotal = myItems.reduce((sum, i) => sum + i.amount, 0);
+        return (
+          <div className="sticky top-0 z-50 -mx-4 px-4 pt-2 pb-2">
+            <div className="bg-green-50 border border-green-200 rounded-xl p-4 shadow-lg">
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-green-800 text-sm">
+                    Your Sponsorships ({myItems.length} item{myItems.length !== 1 ? "s" : ""})
+                  </p>
+                  <p className="text-xs text-green-700 truncate">
+                    {myItems.map((i) => i.category).filter((v, idx, a) => a.indexOf(v) === idx).join(", ")}
+                  </p>
                 </div>
-              ))}
+                <div className="text-right shrink-0">
+                  <p className="text-lg font-bold text-green-800">
+                    ${myTotal.toLocaleString()}
+                  </p>
+                </div>
+                <a
+                  href="https://pay.collctiv.com/2026-banana-reunion-fund-38504"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="shrink-0 px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-xl transition-colors text-sm"
+                >
+                  Make Payment &rarr;
+                </a>
+              </div>
+            </div>
           </div>
-          <div className="flex justify-between items-center border-t border-green-200 pt-3 mb-4">
-            <span className="font-bold text-green-900">Your Total</span>
-            <span className="text-xl font-bold text-green-800">
-              $
-              {items
-                .filter((i) => i.claimedBy === savedName)
-                .reduce((sum, i) => sum + i.amount, 0)
-                .toLocaleString()}
-            </span>
-          </div>
-          <a
-            href="https://pay.collctiv.com/2026-banana-reunion-fund-38504"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="block w-full text-center px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-xl transition-colors text-lg"
-          >
-            Make Payment &rarr;
-          </a>
-          <p className="text-xs text-green-600 text-center mt-2">
-            You&apos;ll be taken to our secure Collctiv payment page
-          </p>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Progress Bar */}
       <div className="bg-white rounded-xl shadow p-4 mb-8">
