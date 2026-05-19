@@ -10,6 +10,7 @@ interface SponsorshipItem {
   amount: number;
   claimedBy: string | null;
   claimedAt: string | null;
+  paymentStatus: string;
 }
 
 interface GroupedCategory {
@@ -95,10 +96,12 @@ export default function Home() {
   };
 
   const groups = groupByCategory(items);
-  const totalRaised = items
+  // Exclude in-kind items from both goal and raised
+  const cashItems = items.filter((i) => i.paymentStatus !== "in_kind");
+  const totalRaised = cashItems
     .filter((i) => i.claimedBy)
     .reduce((sum, i) => sum + i.amount, 0);
-  const totalGoal = items.reduce((sum, i) => sum + i.amount, 0);
+  const totalGoal = cashItems.reduce((sum, i) => sum + i.amount, 0);
   const progressPct = totalGoal > 0 ? (totalRaised / totalGoal) * 100 : 0;
 
   if (!savedName) {

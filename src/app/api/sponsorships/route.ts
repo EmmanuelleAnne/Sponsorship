@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getItems, claimItem, unclaimItem, markPaid } from "@/lib/sponsorships";
+import { getItems, claimItem, unclaimItem, setPaymentStatus } from "@/lib/sponsorships";
+import type { PaymentStatus } from "@/lib/sponsorships";
 
 export const dynamic = "force-dynamic";
 
@@ -9,15 +10,15 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const { id, name, action, paid } = await req.json();
+  const { id, name, action, paymentStatus } = await req.json();
 
   if (action === "unclaim") {
     const result = await unclaimItem(id);
     return NextResponse.json(result, { status: result.success ? 200 : 400 });
   }
 
-  if (action === "markPaid") {
-    const result = await markPaid(id, paid);
+  if (action === "setPaymentStatus") {
+    const result = await setPaymentStatus(id, paymentStatus as PaymentStatus);
     return NextResponse.json(result, { status: result.success ? 200 : 400 });
   }
 

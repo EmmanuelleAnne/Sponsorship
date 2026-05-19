@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useCallback } from "react";
 
+type PaymentStatus = "unpaid" | "paid" | "in_kind";
+
 interface SponsorshipItem {
   id: string;
   category: string;
@@ -10,8 +12,22 @@ interface SponsorshipItem {
   amount: number;
   claimedBy: string | null;
   claimedAt: string | null;
-  paid: boolean;
+  paymentStatus: PaymentStatus;
 }
+
+const STATUS_CYCLE: PaymentStatus[] = ["unpaid", "paid", "in_kind"];
+
+const STATUS_STYLES: Record<PaymentStatus, string> = {
+  unpaid: "bg-stone-200 text-stone-600 hover:bg-stone-300",
+  paid: "bg-green-200 text-green-800 hover:bg-green-300",
+  in_kind: "bg-blue-200 text-blue-800 hover:bg-blue-300",
+};
+
+const STATUS_LABELS: Record<PaymentStatus, string> = {
+  unpaid: "Unpaid",
+  paid: "Paid",
+  in_kind: "In Kind",
+};
 
 export default function AdminPage() {
   const [items, setItems] = useState<SponsorshipItem[]>([]);
@@ -40,12 +56,14 @@ export default function AdminPage() {
     setRemoving(null);
   };
 
-  const handleTogglePaid = async (id: string, currentlyPaid: boolean) => {
+  const handleCycleStatus = async (id: string, current: PaymentStatus) => {
     setToggling(id);
+    const nextIndex = (STATUS_CYCLE.indexOf(current) + 1) % STATUS_CYCLE.length;
+    const next = STATUS_CYCLE[nextIndex];
     await fetch("/api/sponsorships", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, action: "markPaid", paid: !currentlyPaid }),
+      body: JSON.stringify({ id, action: "setPaymentStatus", paymentStatus: next }),
     });
     await fetchItems();
     setToggling(null);
@@ -53,15 +71,29 @@ export default function AdminPage() {
 
   const claimed = items.filter((i) => i.claimedBy);
   const unclaimed = items.filter((i) => !i.claimedBy);
-  const totalRaised = claimed.reduce((sum, i) => sum + i.amount, 0);
-  const totalPaid = claimed.filter((i) => i.paid).reduce((sum, i) => sum + i.amount, 0);
-  const totalGoal = items.reduce((sum, i) => sum + i.amount, 0);
 
-  const sponsorTotals = new Map<string, { pledged: number; paid: number }>();
+  // In-kind items are excluded from both goal and raised totals
+  const inKindItems = items.filter((i) => i.paymentStatus === "in_kind");
+  const inKindTotal = inKindItems.reduce((sum, i) => sum + i.amount, 0);
+
+  const cashItems = items.filter((i) => i.paymentStatus !== "in_kind");
+  const totalGoal = cashItems.reduce((sum, i) => sum + i.amount, 0);
+  const totalPledged = cashItems
+    .filter((i) => i.claimedBy)
+    .reduce((sum, i) => sum + i.amount, 0);
+  const totalPaid = cashItems
+    .filter((i) => i.paymentStatus === "paid")
+    .reduce((sum, i) => sum + i.amount, 0);
+
+  const sponsorTotals = new Map<string, { pledged: number; paid: number; inKind: number }>();
   for (const item of claimed) {
-    const current = sponsorTotals.get(item.claimedBy!) || { pledged: 0, paid: 0 };
-    current.pledged += item.amount;
-    if (item.paid) current.paid += item.amount;
+    const current = sponsorTotals.get(item.claimedBy!) || { pledged: 0, paid: 0, inKind: 0 };
+    if (item.paymentStatus === "in_kind") {
+      current.inKind += item.amount;
+    } else {
+      current.pledged += item.amount;
+      if (item.paymentStatus === "paid") current.paid += item.amount;
+    }
     sponsorTotals.set(item.claimedBy!, current);
   }
 
@@ -87,7 +119,7 @@ export default function AdminPage() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-5 gap-4 mb-8">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-8">
         <div className="bg-white rounded-xl shadow p-4 text-center">
           <p className="text-2xl font-bold text-green-700">
             ${totalPaid.toLocaleString()}
@@ -96,15 +128,21 @@ export default function AdminPage() {
         </div>
         <div className="bg-white rounded-xl shadow p-4 text-center">
           <p className="text-2xl font-bold text-yellow-600">
-            ${totalRaised.toLocaleString()}
+            ${totalPledged.toLocaleString()}
           </p>
           <p className="text-xs text-stone-500 mt-1">Pledged</p>
         </div>
         <div className="bg-white rounded-xl shadow p-4 text-center">
           <p className="text-2xl font-bold text-stone-500">
-            ${(totalGoal - totalRaised).toLocaleString()}
+            ${(totalGoal - totalPledged).toLocaleString()}
           </p>
           <p className="text-xs text-stone-500 mt-1">Remaining</p>
+        </div>
+        <div className="bg-white rounded-xl shadow p-4 text-center">
+          <p className="text-2xl font-bold text-blue-600">
+            ${inKindTotal.toLocaleString()}
+          </p>
+          <p className="text-xs text-stone-500 mt-1">In Kind</p>
         </div>
         <div className="bg-white rounded-xl shadow p-4 text-center">
           <p className="text-2xl font-bold text-stone-800">{claimed.length}</p>
@@ -126,7 +164,7 @@ export default function AdminPage() {
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
             {Array.from(sponsorTotals.entries())
-              .sort((a, b) => b[1].pledged - a[1].pledged)
+              .sort((a, b) => (b[1].pledged + b[1].inKind) - (a[1].pledged + a[1].inKind))
               .map(([name, totals]) => (
                 <div
                   key={name}
@@ -134,12 +172,19 @@ export default function AdminPage() {
                 >
                   <span className="font-medium text-stone-800">{name}</span>
                   <div className="text-right">
-                    <span className="text-green-700 font-semibold">
-                      ${totals.pledged.toLocaleString()}
-                    </span>
+                    {totals.pledged > 0 && (
+                      <span className="text-green-700 font-semibold">
+                        ${totals.pledged.toLocaleString()}
+                      </span>
+                    )}
                     {totals.paid > 0 && (
                       <p className="text-xs text-green-600">
                         ${totals.paid.toLocaleString()} paid
+                      </p>
+                    )}
+                    {totals.inKind > 0 && (
+                      <p className="text-xs text-blue-600">
+                        ${totals.inKind.toLocaleString()} in kind
                       </p>
                     )}
                   </div>
@@ -167,7 +212,7 @@ export default function AdminPage() {
                   <th className="pb-2 pr-4">Amount</th>
                   <th className="pb-2 pr-4">Sponsor</th>
                   <th className="pb-2 pr-4">Date</th>
-                  <th className="pb-2 pr-4 text-center">Paid</th>
+                  <th className="pb-2 pr-4 text-center">Status</th>
                   <th className="pb-2"></th>
                 </tr>
               </thead>
@@ -176,7 +221,11 @@ export default function AdminPage() {
                   <tr
                     key={item.id}
                     className={`border-b border-stone-100 ${
-                      item.paid ? "bg-green-50" : ""
+                      item.paymentStatus === "paid"
+                        ? "bg-green-50"
+                        : item.paymentStatus === "in_kind"
+                        ? "bg-blue-50"
+                        : ""
                     }`}
                   >
                     <td className="py-2.5 pr-4 text-stone-800">
@@ -198,15 +247,13 @@ export default function AdminPage() {
                     </td>
                     <td className="py-2.5 pr-4 text-center">
                       <button
-                        onClick={() => handleTogglePaid(item.id, item.paid)}
+                        onClick={() => handleCycleStatus(item.id, item.paymentStatus)}
                         disabled={toggling === item.id}
                         className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors disabled:opacity-50 ${
-                          item.paid
-                            ? "bg-green-200 text-green-800 hover:bg-green-300"
-                            : "bg-stone-200 text-stone-600 hover:bg-stone-300"
+                          STATUS_STYLES[item.paymentStatus]
                         }`}
                       >
-                        {item.paid ? "Paid" : "Unpaid"}
+                        {STATUS_LABELS[item.paymentStatus]}
                       </button>
                     </td>
                     <td className="py-2.5">

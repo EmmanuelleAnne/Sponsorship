@@ -2,6 +2,8 @@ import { createClient, type Client } from "@libsql/client";
 import fs from "fs";
 import path from "path";
 
+export type PaymentStatus = "unpaid" | "paid" | "in_kind";
+
 export interface SponsorshipItem {
   id: string;
   category: string;
@@ -10,7 +12,7 @@ export interface SponsorshipItem {
   amount: number;
   claimedBy: string | null;
   claimedAt: string | null;
-  paid: boolean;
+  paymentStatus: PaymentStatus;
 }
 
 let _db: Client | null = null;
@@ -31,16 +33,37 @@ function getDb(): Client {
   return _db;
 }
 
-const SEED_ITEMS: { name: string; price: number }[] = [
-  { name: "Welcome Kit", price: 500 },
-  { name: "Snacks", price: 300 },
-  { name: "Picnic Lunch", price: 400 },
-  { name: "Breakfast", price: 300 },
-  { name: "Cook Out Lunch", price: 400 },
-  { name: "Photographer", price: 1500 },
-  { name: "The 1812 Farm", price: 11000 },
-  { name: "Farewell Dinner", price: 3500 },
-  { name: "Floors / Tents", price: 1000 },
+// Schema version — bump this to force a re-seed on next startup
+const SCHEMA_VERSION = 2;
+
+interface SeedPortion {
+  amount: number;
+  count: number;
+}
+
+interface SeedItem {
+  name: string;
+  portions: SeedPortion[];
+}
+
+const SEED_ITEMS: SeedItem[] = [
+  { name: "Welcome Kit", portions: [{ amount: 500, count: 1 }] },
+  { name: "Snacks", portions: [{ amount: 300, count: 1 }] },
+  { name: "Picnic Lunch", portions: [{ amount: 400, count: 1 }] },
+  { name: "Breakfast", portions: [{ amount: 300, count: 1 }] },
+  { name: "Cook Out Lunch", portions: [{ amount: 400, count: 1 }] },
+  { name: "Photographer", portions: [{ amount: 500, count: 3 }] },
+  {
+    name: "The 1812 Farm",
+    portions: [
+      { amount: 500, count: 17 },
+      { amount: 250, count: 6 },
+      { amount: 100, count: 10 },
+    ],
+  },
+  { name: "Farewell Dinner", portions: [{ amount: 500, count: 7 }] },
+  { name: "Floors / Tents", portions: [{ amount: 500, count: 2 }] },
+  { name: "Fireworks", portions: [{ amount: 500, count: 1 }] },
 ];
 
 let initialized = false;
@@ -48,48 +71,73 @@ let initialized = false;
 async function init() {
   if (initialized) return;
 
+  // Create version tracking table
   await getDb().execute(`
-    CREATE TABLE IF NOT EXISTS sponsorships (
-      id TEXT PRIMARY KEY,
-      category TEXT NOT NULL,
-      portion INTEGER,
-      total_portions INTEGER,
-      amount INTEGER NOT NULL,
-      claimed_by TEXT,
-      claimed_at TEXT,
-      paid INTEGER NOT NULL DEFAULT 0
+    CREATE TABLE IF NOT EXISTS schema_version (
+      version INTEGER NOT NULL
     )
   `);
 
-  // Add paid column if it doesn't exist (migration for existing databases)
-  try {
-    await getDb().execute("ALTER TABLE sponsorships ADD COLUMN paid INTEGER NOT NULL DEFAULT 0");
-  } catch {
-    // Column already exists
-  }
+  // Check current version
+  const { rows: vRows } = await getDb().execute("SELECT version FROM schema_version LIMIT 1");
+  const currentVersion = vRows.length > 0 ? Number(vRows[0].version) : 0;
 
-  const { rows } = await getDb().execute("SELECT COUNT(*) as count FROM sponsorships");
-  if (Number(rows[0].count) === 0) {
+  if (currentVersion < SCHEMA_VERSION) {
+    // Drop and recreate with new schema
+    await getDb().execute("DROP TABLE IF EXISTS sponsorships");
+    await getDb().execute(`
+      CREATE TABLE sponsorships (
+        id TEXT PRIMARY KEY,
+        category TEXT NOT NULL,
+        portion INTEGER,
+        total_portions INTEGER,
+        amount INTEGER NOT NULL,
+        claimed_by TEXT,
+        claimed_at TEXT,
+        payment_status TEXT NOT NULL DEFAULT 'unpaid'
+      )
+    `);
+
+    // Seed data
     const stmts: { sql: string; args: (string | number | null)[] }[] = [];
 
     for (const item of SEED_ITEMS) {
-      if (item.price <= 500) {
-        stmts.push({
-          sql: "INSERT INTO sponsorships (id, category, portion, total_portions, amount, claimed_by, claimed_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-          args: [item.name.toLowerCase().replace(/\s+/g, "-"), item.name, null, null, item.price, null, null],
-        });
-      } else {
-        const portions = item.price / 500;
-        for (let i = 1; i <= portions; i++) {
+      const totalPortions = item.portions.reduce((sum, p) => sum + p.count, 0);
+      const isSingle = totalPortions === 1;
+
+      let portionIndex = 1;
+      for (const portion of item.portions) {
+        for (let i = 0; i < portion.count; i++) {
+          const id = isSingle
+            ? item.name.toLowerCase().replace(/\s+/g, "-")
+            : `${item.name.toLowerCase().replace(/\s+/g, "-")}-${portionIndex}`;
+
           stmts.push({
-            sql: "INSERT INTO sponsorships (id, category, portion, total_portions, amount, claimed_by, claimed_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            args: [`${item.name.toLowerCase().replace(/\s+/g, "-")}-${i}`, item.name, i, portions, 500, null, null],
+            sql: "INSERT INTO sponsorships (id, category, portion, total_portions, amount, claimed_by, claimed_at, payment_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            args: [
+              id,
+              item.name,
+              isSingle ? null : portionIndex,
+              isSingle ? null : totalPortions,
+              portion.amount,
+              null,
+              null,
+              "unpaid",
+            ],
           });
+          portionIndex++;
         }
       }
     }
 
     await getDb().batch(stmts);
+
+    // Update version
+    if (vRows.length === 0) {
+      await getDb().execute({ sql: "INSERT INTO schema_version (version) VALUES (?)", args: [SCHEMA_VERSION] });
+    } else {
+      await getDb().execute({ sql: "UPDATE schema_version SET version = ?", args: [SCHEMA_VERSION] });
+    }
   }
 
   initialized = true;
@@ -104,7 +152,7 @@ function rowToItem(row: Record<string, unknown>): SponsorshipItem {
     amount: row.amount as number,
     claimedBy: row.claimed_by as string | null,
     claimedAt: row.claimed_at as string | null,
-    paid: Boolean(row.paid),
+    paymentStatus: (row.payment_status as PaymentStatus) || "unpaid",
   };
 }
 
@@ -143,19 +191,19 @@ export async function unclaimItem(
   if (rows.length === 0) return { success: false, error: "Item not found" };
   if (!rows[0].claimed_by) return { success: false, error: "Item is not claimed" };
 
-  await getDb().execute({ sql: "UPDATE sponsorships SET claimed_by = NULL, claimed_at = NULL WHERE id = ?", args: [id] });
+  await getDb().execute({ sql: "UPDATE sponsorships SET claimed_by = NULL, claimed_at = NULL, payment_status = 'unpaid' WHERE id = ?", args: [id] });
   return { success: true };
 }
 
-export async function markPaid(
+export async function setPaymentStatus(
   id: string,
-  paid: boolean
+  status: PaymentStatus
 ): Promise<{ success: boolean; error?: string }> {
   await init();
 
   const { rows } = await getDb().execute({ sql: "SELECT * FROM sponsorships WHERE id = ?", args: [id] });
   if (rows.length === 0) return { success: false, error: "Item not found" };
 
-  await getDb().execute({ sql: "UPDATE sponsorships SET paid = ? WHERE id = ?", args: [paid ? 1 : 0, id] });
+  await getDb().execute({ sql: "UPDATE sponsorships SET payment_status = ? WHERE id = ?", args: [status, id] });
   return { success: true };
 }
