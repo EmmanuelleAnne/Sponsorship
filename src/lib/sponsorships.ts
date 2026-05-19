@@ -33,8 +33,7 @@ function getDb(): Client {
   return _db;
 }
 
-// Schema version — bump this to force a re-seed on next startup
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 interface SeedPortion {
   amount: number;
@@ -56,9 +55,9 @@ const SEED_ITEMS: SeedItem[] = [
   {
     name: "The 1812 Farm",
     portions: [
-      { amount: 500, count: 17 },
-      { amount: 250, count: 6 },
-      { amount: 100, count: 10 },
+      { amount: 500, count: 14 },
+      { amount: 250, count: 10 },
+      { amount: 100, count: 15 },
     ],
   },
   { name: "Farewell Dinner", portions: [{ amount: 500, count: 7 }] },
@@ -82,8 +81,8 @@ async function init() {
   const { rows: vRows } = await getDb().execute("SELECT version FROM schema_version LIMIT 1");
   const currentVersion = vRows.length > 0 ? Number(vRows[0].version) : 0;
 
-  if (currentVersion < SCHEMA_VERSION) {
-    // Drop and recreate with new schema
+  if (currentVersion === 0) {
+    // Fresh install — create table and seed
     await getDb().execute("DROP TABLE IF EXISTS sponsorships");
     await getDb().execute(`
       CREATE TABLE sponsorships (
@@ -98,7 +97,6 @@ async function init() {
       )
     `);
 
-    // Seed data
     const stmts: { sql: string; args: (string | number | null)[] }[] = [];
 
     for (const item of SEED_ITEMS) {
@@ -131,8 +129,50 @@ async function init() {
     }
 
     await getDb().batch(stmts);
+  }
 
-    // Update version
+  // Migration v2 → v3: adjust 1812 Farm portions (preserve existing claims)
+  if (currentVersion === 2) {
+    const newTotal = 39; // 14×$500 + 10×$250 + 15×$100
+
+    // Remove 3 unclaimed $500 portions from the high end (17, 16, 15)
+    // Only delete if unclaimed; skip claimed ones
+    for (let i = 17; i >= 15; i--) {
+      await getDb().execute({
+        sql: "DELETE FROM sponsorships WHERE id = ? AND claimed_by IS NULL",
+        args: [`the-1812-farm-${i}`],
+      });
+    }
+
+    // Add 4 more $250 portions (old had 6 at positions 18-23, add 34-37)
+    for (let i = 34; i <= 37; i++) {
+      try {
+        await getDb().execute({
+          sql: "INSERT INTO sponsorships (id, category, portion, total_portions, amount, payment_status) VALUES (?, ?, ?, ?, ?, ?)",
+          args: [`the-1812-farm-${i}`, "The 1812 Farm", i, newTotal, 250, "unpaid"],
+        });
+      } catch { /* already exists */ }
+    }
+
+    // Add 5 more $100 portions (old had 10 at positions 24-33, add 38-42)
+    for (let i = 38; i <= 42; i++) {
+      try {
+        await getDb().execute({
+          sql: "INSERT INTO sponsorships (id, category, portion, total_portions, amount, payment_status) VALUES (?, ?, ?, ?, ?, ?)",
+          args: [`the-1812-farm-${i}`, "The 1812 Farm", i, newTotal, 100, "unpaid"],
+        });
+      } catch { /* already exists */ }
+    }
+
+    // Update total_portions for all 1812 Farm items
+    await getDb().execute({
+      sql: "UPDATE sponsorships SET total_portions = ? WHERE category = ?",
+      args: [newTotal, "The 1812 Farm"],
+    });
+  }
+
+  // Update schema version
+  if (currentVersion < SCHEMA_VERSION) {
     if (vRows.length === 0) {
       await getDb().execute({ sql: "INSERT INTO schema_version (version) VALUES (?)", args: [SCHEMA_VERSION] });
     } else {

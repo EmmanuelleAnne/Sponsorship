@@ -184,9 +184,7 @@ export default function Home() {
                     </p>
                   </div>
                   <a
-                    href="https://pay.collctiv.com/2026-banana-reunion-fund-38504"
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    href="/payment"
                     className="shrink-0 px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-xl transition-colors text-sm"
                   >
                     Make Payment &rarr;
@@ -213,9 +211,7 @@ export default function Home() {
                     </p>
                   </div>
                   <a
-                    href="https://pay.collctiv.com/2026-banana-reunion-fund-38504"
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    href="/payment"
                     className="shrink-0 px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-xl transition-colors text-sm"
                   >
                     Make Payment &rarr;
